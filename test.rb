@@ -32,3 +32,5 @@ student = Student.create(first_name: "Zassmin",
                          gender: 'none', 
                          birthdate: '0000-11-08')
 p Student.where('first_name = ?', 'Zassmin').count > 0
+
+puts Student.table_name

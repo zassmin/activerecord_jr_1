@@ -16,6 +16,10 @@ module Database
       @filename
     end
 
+    def self.table_name
+      self.to_s.downcase + "s"
+    end
+
     def self.database=(filename)
       @filename = filename.to_s
       @connection = SQLite3::Database.new(@filename)
@@ -55,6 +59,19 @@ module Database
       !self.connection.nil?
     end
 
+    def initialize(attributes = {})
+      attributes.symbolize_keys!
+      raise_error_if_invalid_attribute!(attributes.keys)
+
+      @attributes = {}
+
+      self.class.attribute_names.each do |name|
+        @attributes[name] = attributes[name]
+      end
+
+      @old_attributes = @attributes.dup
+    end
+
     def raise_error_if_invalid_attribute!(attributes)
       # This guarantees that attributes is an array, so we can call both:
       #   raise_error_if_invalid_attribute!("id")
@@ -76,6 +93,58 @@ module Database
       self.class.attribute_names.include? attribute
     end
 
+    def self.create(attributes)
+      record = self.new(attributes)
+      record.save
+
+      record
+    end
+
+    def self.where(query, *args)
+      Database::Model.execute("SELECT * FROM #{self.table_name} WHERE #{query}", *args).map do |row|
+        self.new(row)
+      end
+    end
+
+    def self.find(pk)
+      self.where('id = ?', pk).first
+    end
+
+    def new_record?
+      self[:id].nil?
+    end
+
+    def save
+      if new_record?
+        results = insert!
+      else
+        results = update!
+      end
+
+      # When we save, remove changes between new and old attributes
+      @old_attributes = @attributes.dup
+
+      results
+    end
+
+    def [](attribute)
+      raise_error_if_invalid_attribute!(attribute)
+
+      @attributes[attribute]
+    end
+
+    def []=(attribute, value)
+      raise_error_if_invalid_attribute!(attribute)
+
+      @attributes[attribute] = value
+    end
+
+    def self.all
+      Database::Model.execute("SELECT * FROM #{self.table_name}").map do |row|
+        self.new(row)
+      end
+    end
+
     private
     def self.prepare_value(value)
       case value
@@ -85,5 +154,36 @@ module Database
         value
       end
     end
+
+    def insert!
+      self[:created_at] = DateTime.now
+      self[:updated_at] = DateTime.now
+
+      fields = self.attributes.keys
+      values = self.attributes.values
+      marks  = Array.new(fields.length) { '?' }.join(',')
+
+      insert_sql = "INSERT INTO #{self.class.table_name} (#{fields.join(',')}) VALUES (#{marks})"
+
+      results = Database::Model.execute(insert_sql, *values)
+
+      # This fetches the new primary key and updates this instance
+      self[:id] = Database::Model.last_insert_row_id
+      results
+    end
+
+    def update!
+      self[:updated_at] = DateTime.now
+
+      fields = self.attributes.keys
+      values = self.attributes.values
+
+      update_clause = fields.map { |field| "#{field} = ?" }.join(',')
+      update_sql = "UPDATE #{self.class.table_name} SET #{update_clause} WHERE id = ?"
+
+      # We have to use the (potentially) old ID attributein case the user has re-set it.
+      Database::Model.execute(update_sql, *values, self.old_attributes[:id])
+    end
+
   end
 end
