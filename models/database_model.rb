@@ -5,6 +5,9 @@ module Database
   class NotConnectedError < StandardError;end
 
   class Model
+
+    attr_reader :attributes, :old_attributes
+    
     def self.inherited(klass)
     end
 

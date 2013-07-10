@@ -1,8 +1,6 @@
 class Cohort < Database::Model
-  
-  self.attribute_names =  [:id, :name, :created_at, :updated_at]
 
-  attr_reader :attributes, :old_attributes
+  self.attribute_names =  [:id, :name, :created_at, :updated_at]
 
   def students
     Student.where('cohort_id = ?', self[:id])
